@@ -1,5 +1,7 @@
 #include "config.h"
 
+const char *VERSION = "1.0.0";
+
 const char *DEVICE_TYPE = "led-strip";
 const char *DEVICE_TYPE_NAME = "LED Strip";
 

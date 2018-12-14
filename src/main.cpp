@@ -59,6 +59,8 @@ void setup()
   Serial.begin(115200);
   Serial.println();
 
+  pinMode(LED_PIN, OUTPUT);
+
   noInterrupts();
   espShow(LED_PIN, InitPattern, 9, true);
   interrupts();
@@ -69,17 +71,16 @@ void setup()
 
   wifiManager.autoConnect((deviceName + " (" + DEVICE_TYPE_NAME + ")").c_str());
 
-  pinMode(LED_PIN, OUTPUT);
-
   MDNS.begin(deviceName.c_str());
 
   httpUpdater.setup(&httpServer);
 
   httpServer.on(String("/"), [deviceName]() {
-    String json("{\"deviceType\":\"DEVICE_TYPE\",\"deviceName\":\"DEVICE_NAME\"}");
+    String json("{\"deviceType\":\"DEVICE_TYPE\",\"deviceName\":\"DEVICE_NAME\",\"version\":\"VERSION\"}");
 
     json.replace("DEVICE_TYPE", DEVICE_TYPE);
     json.replace("DEVICE_NAME", deviceName);
+    json.replace("VERSION", VERSION);
 
     httpServer.send(200, "application/json", json);
   });

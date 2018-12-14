@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+extern const char *VERSION;
+
 extern const char *DEVICE_TYPE;
 extern const char *DEVICE_TYPE_NAME;
 
