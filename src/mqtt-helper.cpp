@@ -25,6 +25,16 @@ void mqtt_init(const char *deviceName, IPAddress ip, uint16_t port)
   }
 }
 
+bool mqtt_isconnected()
+{
+  if (_mqttClient)
+  {
+    return _mqttClient->connected();
+  }
+
+  return false;
+}
+
 void mqtt_subscribe(const char *topic)
 {
   if (_mqttClient)
@@ -39,9 +49,6 @@ void mqtt_callback(MqttMessageCallback callback)
     Serial.println(String("Message arrived [") + String(topic) + String("]"));
 
     callback(topic, payload, length);
-
-    // delete _mqttClient;
-    // _mqttClient = NULL;
   });
 }
 

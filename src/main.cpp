@@ -13,8 +13,14 @@
 WiFiUDP Udp;
 char incomingPacket[255]; // buffer for incoming packets
 
-ESP8266WebServer httpServer(8080);
+ESP8266WebServer httpServer(HTTP_PORT);
 ESP8266HTTPUpdateServer httpUpdater;
+
+String deviceReplyChannel;
+
+uint8_t InitPattern[] = {255, 0, 0, 0, 255, 0, 0, 0, 255};
+uint8_t ReadyPattern[] = {255, 255, 255, 0, 0, 0, 0, 0, 0};
+uint8_t WarnPattern[] = {0, 255, 0, 0, 255, 0, 0, 255, 0};
 
 void connect_udp(IPAddress ip, uint16_t localUdpPort)
 {
@@ -23,10 +29,39 @@ void connect_udp(IPAddress ip, uint16_t localUdpPort)
   Serial.printf("Now listening at IP %s, UDP port %d\n", WiFi.localIP().toString().c_str(), localUdpPort);
 }
 
+String commandHandler(String msg)
+{
+  if (msg == "reset")
+  {
+    ESP.reset();
+  }
+
+  if (msg == "ping")
+  {
+    return String("pong");
+  }
+
+  if (msg.startsWith("connect-udp"))
+  {
+    IPAddress ip;
+
+    if (ip.fromString(msg.substring(12)))
+    {
+      connect_udp(ip, 54321);
+    }
+  }
+
+  return String("");
+}
+
 void setup()
 {
   Serial.begin(115200);
   Serial.println();
+
+  noInterrupts();
+  espShow(LED_PIN, InitPattern, 9, true);
+  interrupts();
 
   auto deviceName = getDeviceName();
 
@@ -40,7 +75,7 @@ void setup()
 
   httpUpdater.setup(&httpServer);
 
-  httpServer.on(String('/'), [deviceName]() {
+  httpServer.on(String("/"), [deviceName]() {
     String json("{\"deviceType\":\"DEVICE_TYPE\",\"deviceName\":\"DEVICE_NAME\"}");
 
     json.replace("DEVICE_TYPE", DEVICE_TYPE);
@@ -49,16 +84,24 @@ void setup()
     httpServer.send(200, "application/json", json);
   });
 
+  httpServer.on(String("/cmd"), []() {
+    String msg = httpServer.arg(0);
+
+    String reply = commandHandler(msg);
+
+    httpServer.send(200, "text/plain", reply);
+  });
+
   httpServer.begin();
 
-  MDNS.addService("http", "tcp", 8080);
-  Serial.printf("HTTPUpdateServer ready! Open http://%s.local:8080/update in your browser\n", deviceName.c_str());
+  MDNS.addService("http", "tcp", HTTP_PORT);
+  Serial.printf("HTTPUpdateServer ready! Open http://%s.local:%d/update in your browser\n", deviceName.c_str(), HTTP_PORT);
 
   String deviceChannel = String(DEVICE_CHANNEL_PREFIX) + "in/" + deviceName;
   String typeChannel = String(DEVICE_CHANNEL_PREFIX) + "in/" + DEVICE_TYPE;
   String allChannel = String(DEVICE_CHANNEL_PREFIX) + "in/all";
 
-  String deviceReplyChannel = String(DEVICE_CHANNEL_PREFIX) + "out/" + deviceName;
+  deviceReplyChannel = String(DEVICE_CHANNEL_PREFIX) + "out/" + deviceName;
 
   MdnsService mqttService;
   if (mdns_discover("mqtt", 5, &mqttService))
@@ -69,7 +112,7 @@ void setup()
     mqtt_subscribe(typeChannel.c_str());
     mqtt_subscribe(allChannel.c_str());
 
-    mqtt_callback([deviceReplyChannel](const char *topic, uint8_t *payload, unsigned int length) {
+    mqtt_callback([](const char *topic, uint8_t *payload, unsigned int length) {
       char *message = new char[length + 1];
 
       memcpy(message, payload, length);
@@ -77,24 +120,11 @@ void setup()
 
       String msg = String(message);
 
-      if (msg == "reset")
-      {
-        ESP.reset();
-      }
+      String reply = commandHandler(msg);
 
-      if (msg == "ping")
+      if (reply.length() > 0)
       {
-        mqtt_publish(deviceReplyChannel.c_str(), "pong");
-      }
-
-      if (msg.startsWith("connect-udp"))
-      {
-        IPAddress ip;
-
-        if (ip.fromString(msg.substring(12)))
-        {
-          connect_udp(ip, 54321);
-        }
+        mqtt_publish(deviceReplyChannel.c_str(), reply.c_str());
       }
 
       delete message;
@@ -102,10 +132,37 @@ void setup()
 
     mqtt_publish((String(REGISTER_CHANNEL_PREFIX) + DEVICE_TYPE).c_str(), deviceName.c_str());
   }
+
+  if (mqtt_isconnected())
+  {
+    noInterrupts();
+    espShow(LED_PIN, ReadyPattern, 9, true);
+    interrupts();
+  }
+  else
+  {
+    Serial.println("WARNING: MQTT not connected. Will reboot in 30 seconds...");
+
+    noInterrupts();
+    espShow(LED_PIN, WarnPattern, 9, true);
+    interrupts();
+  }
 }
 
 void loop()
 {
+  // Check MQTT connected state...
+  // Could choose to the keep the program running, but for this application MQTT is required.
+  // So reboot after 30 seconds and hope that MQTT is found the next time.
+
+  if (!mqtt_isconnected())
+  {
+    if (millis() > 30 * 1000)
+    {
+      ESP.reset();
+    }
+  }
+
   httpServer.handleClient();
 
   mqtt_loop();

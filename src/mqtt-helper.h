@@ -8,6 +8,7 @@
 typedef std::function<void(const char *topic, uint8_t *payload, unsigned int length)> MqttMessageCallback;
 
 void mqtt_init(const char *deviceName, IPAddress ip, uint16_t port);
+bool mqtt_isconnected();
 void mqtt_subscribe(const char *topic);
 void mqtt_callback(MqttMessageCallback callback);
 void mqtt_publish(const char *topic, const char *payload);
